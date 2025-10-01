@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <title>Interactive Cubes with Proper Sprites</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+                background: #111;
+            }
+
+            #container {
+                width: 90%;
+                height: 500px;
+                margin: auto;
+                border: 3px solid white;
+                position: relative;
+            }
+
+            #menu {
+                position: absolute;
+                background: rgba(255, 255, 255, 0.9);
+                border: 2px solid #333;
+                padding: 10px;
+                display: none;
+                z-index: 10;
+            }
+
+            #close-btn {
+                cursor: pointer;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div id="container"></div>
+        <div id="menu">
+            <p id="menu-text"></p>
+            <button id="close-btn">Close</button>
+        </div>
+        <div id="joypad" style="position:absolute; bottom:20px; left:20px; width:150px; height:150px; z-index:20;">
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.0/nipplejs.min.js"></script>
+
+
+        <script type="module">
+            import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+            import { TextureLoader, SpriteMaterial, Sprite } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+
+            const keys = {
+                w: false,
+                a: false,
+                s: false,
+                d: false
+            };
+
+            window.addEventListener('keydown', e => {
+                if (e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true;
+            });
+
+            window.addEventListener('keyup', e => {
+                if (e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = false;
+            });
+            const joypad = nipplejs.create({
+                zone: document.getElementById('joypad'),
+                mode: 'static',
+                position: { left: '75px', bottom: '75px' },
+                color: 'white',
+                size: 120
+            });
+
+            let joyX = 0, joyY = 0;
+            let sprite;
+
+            joypad.on('move', (evt, data) => {
+                if (data.vector) {
+                    joyX = data.vector.x; // -1 to 1
+                    joyY = data.vector.y; // -1 to 1
+                }
+            });
+
+            joypad.on('end', () => {
+                joyX = 0;
+                joyY = 0;
+            });
+
+            const container = document.getElementById('container');
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(5, 5, 5).normalize();
+            scene.add(light);
+
+            // Cubes
+            const cubes = [];
+            const materials = [
+                new THREE.MeshStandardMaterial({ color: 0xff4444 }),
+                new THREE.MeshStandardMaterial({ color: 0x44ff44 }),
+                new THREE.MeshStandardMaterial({ color: 0x4444ff }),
+                new THREE.MeshStandardMaterial({ color: 0xffff44 }),
+                new THREE.MeshStandardMaterial({ color: 0xff44ff })
+            ];
+            const cubeNames = ["Red Cube", "Green Cube", "Blue Cube", "Yellow Cube", "Magenta Cube"];
+            for (let i = 0; i < 5; i++) {
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                const cube = new THREE.Mesh(geometry, materials[i]);
+                cube.position.x = (i - 2) * 2.5;
+                cube.name = cubeNames[i];
+                cube.health = 100 + i * 10;
+                cube.type = "Basic";
+                cube.isInteractable = true;
+                scene.add(cube);
+                cubes.push(cube);
+            }
+
+            // Sprite labels for each cube
+            const spriteURLs = [
+                'https://static.wikia.nocookie.net/beatless/images/d/dc/Lacia%281%29.png',
+            ];
+
+            const loader = new TextureLoader();
+
+            loader.load(
+                spriteURLs[0],
+                texture => {
+                    const spriteMaterial = new SpriteMaterial({
+                        map: texture,
+                        color: 0xffffff,
+                        transparent: true,
+                        alphaTest: 0.5
+                    });
+                    sprite = new Sprite(spriteMaterial);
+                    sprite.position.set(1, 1, 1);
+                    sprite.scale.set(1, 1, 1);
+                    scene.add(sprite);
+                },
+                undefined,
+                err => console.error('Error loading sprite texture:', err)
+            );
+
+            // ArrowHelper
+            const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), camera.position.clone(), 5, 0xffff00);
+            scene.add(arrowHelper);
+
+            // Menu
+            const menu = document.getElementById('menu');
+            const menuText = document.getElementById('menu-text');
+            const closeBtn = document.getElementById('close-btn');
+            closeBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                menu.style.display = 'none';
+            });
+            menu.addEventListener('click', e => e.stopPropagation());
+
+            // Raycaster
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            function handleClick(clientX, clientY) {
+                const rect = container.getBoundingClientRect();
+                mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(cubes);
+
+                arrowHelper.position.copy(camera.position);
+                let dir, length;
+                if (intersects.length > 0) {
+                    dir = intersects[0].point.clone().sub(camera.position).normalize();
+                    length = camera.position.distanceTo(intersects[0].point);
+                } else {
+                    dir = raycaster.ray.direction.clone();
+                    length = 50;
+                }
+                arrowHelper.setDirection(dir);
+                arrowHelper.setLength(length);
+
+                if (intersects.length > 0) {
+                    const clickedCube = intersects[0].object;
+                    menu.style.left = clientX + 'px';
+                    menu.style.top = clientY + 'px';
+                    menu.style.display = 'block';
+                    menuText.innerText = `
+Name: ${clickedCube.name}
+Type: ${clickedCube.type}
+Health: ${clickedCube.health}
+Interactable: ${clickedCube.isInteractable}
+    `;
+                } else {
+                    menu.style.display = 'none';
+                }
+            }
+
+            window.addEventListener('click', e => handleClick(e.clientX, e.clientY));
+            window.addEventListener('touchend', e => {
+                if (e.changedTouches.length === 1) {
+                    handleClick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                }
+            });
+
+            // Camera control
+            let theta = Math.PI / 2, phi = Math.PI / 2, radius = 10;
+            function updateCameraPosition() {
+                camera.position.x = radius * Math.sin(phi) * Math.cos(theta);
+                camera.position.y = radius * Math.cos(phi);
+                camera.position.z = radius * Math.sin(phi) * Math.sin(theta);
+                camera.lookAt(0, 0, 0);
+            }
+
+            // Fit camera to cubes
+            function fitCameraToCubes(offset = 1.25) {
+                const box = new THREE.Box3().setFromObject(scene);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                radius = (maxDim / 2) / Math.tan(fov / 2) * offset;
+                updateCameraPosition();
+            }
+            fitCameraToCubes();
+
+            const spriteSpeed = 0.3; // movement speed
+            function getKeyboardMovement(spriteSpeed = 0.1) {
+                let dx = 0, dy = 0;
+                if (keys.w) dy += spriteSpeed;
+                if (keys.s) dy -= spriteSpeed;
+                if (keys.a) dx -= spriteSpeed;
+                if (keys.d) dx += spriteSpeed;
+                return { dx, dy };
+            }
+            // Animation
+            function animate() {
+                requestAnimationFrame(animate);
+                cubes.forEach((cube, i) => {
+                    cube.rotation.x += 0.01 + i * 0.002;
+                    cube.rotation.y += 0.01 + i * 0.003;
+                });
+
+
+                // Joystick movement
+                let moveX = joyX * spriteSpeed;
+                let moveY = joyY * spriteSpeed;
+
+                // Keyboard movement
+                const kbMove = getKeyboardMovement(spriteSpeed);
+                moveX += kbMove.dx;
+                moveY += kbMove.dy;
+                sprite.position.x += moveX * spriteSpeed;
+                sprite.position.y += moveY * spriteSpeed;
+
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Responsive canvas
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    const width = entry.contentRect.width;
+                    const height = entry.contentRect.height;
+                    camera.aspect = width / height;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(width, height);
+                    fitCameraToCubes();
+                }
+            });
+            resizeObserver.observe(container);
+
+            // Mouse drag
+            let isDragging = false;
+            let previousMouse = { x: 0, y: 0 };
+            container.addEventListener('mousedown', e => {
+                isDragging = true; previousMouse.x = e.clientX; previousMouse.y = e.clientY;
+            });
+            container.addEventListener('mouseup', () => { isDragging = false; });
+            container.addEventListener('mousemove', e => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - previousMouse.x;
+                const deltaY = e.clientY - previousMouse.y;
+                previousMouse.x = e.clientX;
+                previousMouse.y = e.clientY;
+                theta -= deltaX * 0.005;
+                phi -= deltaY * 0.005;
+                phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+                updateCameraPosition();
+            });
+
+            // Touch drag and pinch
+            let previousTouch = { x: 0, y: 0 };
+            let initialPinchDistance = null;
+            container.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) {
+                    previousTouch.x = e.touches[0].clientX;
+                    previousTouch.y = e.touches[0].clientY;
+                }
+            });
+            container.addEventListener('touchmove', e => {
+                if (e.touches.length === 1) {
+                    const deltaX = e.touches[0].clientX - previousTouch.x;
+                    const deltaY = e.touches[0].clientY - previousTouch.y;
+                    previousTouch.x = e.touches[0].clientX;
+                    previousTouch.y = e.touches[0].clientY;
+                    theta -= deltaX * 0.005;
+                    phi -= deltaY * 0.005;
+                    phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+                    updateCameraPosition();
+                } else if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (initialPinchDistance !== null) {
+                        const delta = distance - initialPinchDistance;
+                        radius -= delta * 0.01;
+                        radius = Math.max(3, Math.min(50, radius));
+                        updateCameraPosition();
+                    }
+                    initialPinchDistance = distance;
+                }
+            });
+            container.addEventListener('touchend', e => {
+                if (e.touches.length < 2) initialPinchDistance = null;
+            });
+        </script>
+    </body>
+
+</html>
