@@ -26,7 +26,20 @@
 
     <body>
         <div id="joystick"></div>
-
+        <div id="loadingScreen" style="
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: #111;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2em;
+    z-index: 10;
+">
+            Loading...
+        </div>
         <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
         <script>
@@ -37,11 +50,26 @@
             document.body.appendChild(renderer.domElement);
             camera.position.z = 5;
 
-            const loader = new THREE.TextureLoader();
+            const manager = new THREE.LoadingManager();
+            manager.onStart = function (url, itemsLoaded, itemsTotal) {
+                console.log(`Started loading: ${url}`);
+            };
+            manager.onProgress = function (url, itemsLoaded, itemsTotal) {
+                console.log(`Loading: ${itemsLoaded} / ${itemsTotal}`);
+            };
+            manager.onLoad = function () {
+                console.log("All textures loaded!");
+                document.getElementById('loadingScreen').style.display = 'none';
+            };
+            manager.onError = function (url) {
+                console.log(`Error loading ${url}`);
+            };
+
+            const loader = new THREE.TextureLoader(manager);
             const imageUrls = [
                 "./imgs/sky.png",     // back (static)
                 "./imgs/backdrop.png",     // slow
-                "./imgs/rimuru.gif", // faster
+                // "./imgs/rimuru.gif", // faster
                 "./imgs/foreground.png"    // front (static)
             ];
 
@@ -90,8 +118,8 @@
             // Load textures
             loader.load(imageUrls[0], tex => createLayer(tex, -3, 0));   // static background
             loader.load(imageUrls[1], tex => createLayer(tex, -2, 0.03)); // slow
-            loader.load(imageUrls[2], tex => createLayer(tex, -1, 0)); // faster
-            loader.load(imageUrls[3], tex => createLayer(tex, 0, 0.07));    // static foreground
+            // loader.load(imageUrls[2], tex => createLayer(tex, -1, 0)); // faster
+            loader.load(imageUrls[2], tex => createLayer(tex, 0, 0.07));    // static foreground
 
             // Keyboard
             const keys = {};
@@ -108,6 +136,28 @@
             });
             joystick.on('move', (evt, data) => { if (data.vector.x) joystickForce = data.vector.x; });
             joystick.on('end', () => { joystickForce = 0; });
+
+            const video = document.createElement('video');
+            video.src = './imgs/rimuru.webm'; // your converted transparent animation
+            video.loop = true;
+            video.muted = true;
+            video.autoplay = true;
+            video.playsInline = true; // important for mobile
+            video.play();
+
+            const texture = new THREE.VideoTexture(video);
+            texture.format = THREE.RGBAFormat; // keep transparency
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.needsUpdate = true;
+
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true
+            });
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
 
             // Animate
             function animate() {
